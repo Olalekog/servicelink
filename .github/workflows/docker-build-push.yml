@@ -41,7 +41,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=dev
+            type=raw,value=dev,enable=${{ github.ref_name == 'dev' }}
+            type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
+            type=raw,value=main,enable=${{ github.ref_name == 'main' }}
             type=raw,value=${{ github.sha }}
 
       - name: Build image (local only, not pushed)
@@ -203,6 +205,7 @@ jobs:
   deploy-dev:
     runs-on: ubuntu-latest
     needs: [build, push]
+    if: github.ref_name == 'dev'
     steps:
       - name: Deploy dev tag to the dev EC2 instance
         env:
@@ -220,6 +223,30 @@ jobs:
               docker run -d --name servicelink --restart unless-stopped -p 8080:8080 $IMAGE_REF
             "
 
-  # Promoting to production (retagging as main/latest and deploying to the prod
-  # instance) lives in promote-deploy-prod.yml, which only runs via manual
-  # workflow_dispatch — it is never reachable from this push-triggered workflow.
+  # Building from main only happens when someone manually runs this workflow with
+  # "main" selected as the branch — pushes to main never trigger this file at all
+  # (the `on.push` trigger above is scoped to dev only). Deploying what that build
+  # produces is a second, separate manual step below, gated by the `production`
+  # environment's required reviewers on top of the fact that this job is only
+  # even reachable on a manually-dispatched run against main.
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: [build, push]
+    if: github.ref_name == 'main' && github.event_name == 'workflow_dispatch'
+    environment: production
+    steps:
+      - name: Deploy latest tag to the prod EC2 instance
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          IMAGE_REF: ${{ needs.build.outputs.image }}:latest
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i ~/.ssh/deploy_key "ec2-user@$PROD_HOST" "
+              docker pull $IMAGE_REF &&
+              (docker rm -f servicelink || true) &&
+              docker run -d --name servicelink --restart unless-stopped -p 8080:8080 $IMAGE_REF
+            "

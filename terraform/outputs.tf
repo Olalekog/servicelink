@@ -1,19 +1,29 @@
-output "public_ips" {
-  description = "Public IP address of each environment's EC2 instance"
-  value       = { for env, inst in aws_instance.app : env => inst.public_ip }
+output "public_ip" {
+  description = "Public IP address of this workspace's EC2 instance (null in the default workspace)"
+  value       = length(aws_instance.app) > 0 ? aws_instance.app[0].public_ip : null
 }
 
-output "app_urls" {
-  description = "URL where each environment's app should be reachable"
-  value       = { for env, inst in aws_instance.app : env => "http://${inst.public_ip}:${var.app_port}" }
+output "app_url" {
+  description = "URL where this workspace's app should be reachable"
+  value       = length(aws_instance.app) > 0 ? "http://${aws_instance.app[0].public_ip}:${var.app_port}" : null
 }
 
-output "ssh_commands" {
-  description = "SSH command to connect to each environment's instance"
-  value       = { for env, inst in aws_instance.app : env => "ssh -i ${var.project_name}-key.pem ec2-user@${inst.public_ip}" }
+output "ssh_command" {
+  description = "SSH command to connect to this workspace's instance"
+  value       = length(aws_instance.app) > 0 ? "ssh -i ${var.project_name}-key.pem ec2-user@${aws_instance.app[0].public_ip}" : null
+}
+
+output "security_group_id" {
+  description = "ID of the shared security group (set this as security_group_id in dev.tfvars/prod.tfvars)"
+  value       = local.security_group_id
+}
+
+output "key_name" {
+  description = "Name of the shared SSH key pair (set this as key_pair_name in dev.tfvars/prod.tfvars)"
+  value       = local.key_name
 }
 
 output "private_key_path" {
-  description = "Path to the generated private key, if Terraform generated one"
-  value       = var.key_pair_name == null ? local_sensitive_file.private_key[0].filename : null
+  description = "Path to the generated private key, if Terraform generated one (default workspace only)"
+  value       = var.key_pair_name == null ? try(local_sensitive_file.private_key[0].filename, null) : null
 }

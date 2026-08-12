@@ -8,6 +8,13 @@ on:
     paths: ["terraform/**"]
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Environment to apply (only used when action = apply)"
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
       action:
         description: "Terraform action to run"
         required: true
@@ -28,6 +35,9 @@ env:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
     defaults:
       run:
         working-directory: terraform
@@ -55,13 +65,16 @@ jobs:
       - name: Terraform validate
         run: terraform validate
 
+      - name: Select workspace
+        run: terraform workspace select -or-create=true ${{ matrix.environment }}
+
       - name: Terraform plan
-        run: terraform plan -input=false -out=tfplan
+        run: terraform plan -input=false -var-file=terraform.tfvars -var-file=${{ matrix.environment }}.tfvars -out=tfplan
 
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan
+          name: tfplan-${{ matrix.environment }}
           path: terraform/tfplan
           retention-days: 1
 
@@ -94,10 +107,13 @@ jobs:
       - name: Terraform init
         run: terraform init -input=false
 
+      - name: Select workspace
+        run: terraform workspace select -or-create=true ${{ github.event.inputs.environment }}
+
       - name: Download plan artifact
         uses: actions/download-artifact@v4
         with:
-          name: tfplan
+          name: tfplan-${{ github.event.inputs.environment }}
           path: terraform
 
       - name: Terraform apply

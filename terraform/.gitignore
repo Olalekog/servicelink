@@ -2,6 +2,9 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
+!terraform.tfvars
+!dev.tfvars
+!prod.tfvars
 *.pem
 crash.log
 tfplan

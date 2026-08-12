@@ -70,7 +70,10 @@ locals {
   key_name = coalesce(var.key_pair_name, try(aws_key_pair.generated[0].key_name, null))
 }
 
+# Shared across every environment — created once (in the default workspace,
+# where var.security_group_id is left null) and referenced by ID everywhere else.
 resource "aws_security_group" "app" {
+  count       = var.security_group_id == null ? 1 : 0
   name_prefix = "${var.project_name}-sg-"
   description = "Allow SSH and app traffic"
   vpc_id      = data.aws_vpc.default.id
@@ -107,22 +110,29 @@ resource "aws_security_group" "app" {
   }
 }
 
+locals {
+  security_group_id = coalesce(var.security_group_id, try(aws_security_group.app[0].id, null))
+}
+
+# One instance per workspace. The default workspace only manages the shared SG
+# and key pair above, so it's skipped here (count = 0) — dev/prod workspaces
+# (selected via `terraform workspace select` + their own tfvars file) get one.
 resource "aws_instance" "app" {
-  for_each = var.environments
+  count = terraform.workspace == "default" ? 0 : 1
 
   ami                         = data.aws_ami.al2023.id
-  instance_type               = each.value.instance_type
+  instance_type               = var.instance_type
   subnet_id                   = local.eligible_subnet_ids[0]
-  vpc_security_group_ids      = [aws_security_group.app.id]
+  vpc_security_group_ids      = [local.security_group_id]
   key_name                    = local.key_name
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    image_ref = "${var.image_name}:${each.value.image_tag}"
+    image_ref = "${var.image_name}:${var.image_tag}"
     app_port  = var.app_port
   })
 
   tags = {
-    Name = "${var.project_name}-${each.key}"
+    Name = "${var.project_name}-${terraform.workspace}"
   }
 }
