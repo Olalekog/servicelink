@@ -68,12 +68,9 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history improves SonarQube analysis
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -87,6 +84,12 @@ jobs:
 
       - name: Run unit tests
         run: pytest app/ -v
+
+  checkov:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Checkov IaC/Dockerfile scan
         continue-on-error: true # report-only: never blocks the pipeline
@@ -110,6 +113,14 @@ jobs:
           sarif_file: checkov-results.sarif
           category: checkov
 
+  sonarqube:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history improves SonarQube analysis
+
       # SonarQube/SonarCloud is not configured yet. Add SONAR_TOKEN (and SONAR_HOST_URL for a
       # self-hosted server; skip it for SonarCloud) as repo secrets, and fill in
       # sonar-project.properties, before this step will produce real results.
@@ -120,6 +131,10 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
+  trivy-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
       - name: Download image artifact
         uses: actions/download-artifact@v4
         with:
@@ -162,7 +177,7 @@ jobs:
 
   push:
     runs-on: ubuntu-latest
-    needs: [build, test]
+    needs: [build, test, checkov, sonarqube, trivy-scan]
     steps:
       - name: Download image artifact
         uses: actions/download-artifact@v4
