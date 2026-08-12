@@ -242,3 +242,22 @@ jobs:
           docker tag "$SRC" "${{ needs.build.outputs.image }}:latest"
           docker push "${{ needs.build.outputs.image }}:main"
           docker push "${{ needs.build.outputs.image }}:latest"
+
+      # Only reachable once a reviewer approves the `production` environment above —
+      # this is the one and only path that touches the prod instance. deploy-dev
+      # runs unconditionally on every push; this does not.
+      - name: Deploy latest image to the production EC2 instance
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          IMAGE_REF: ${{ needs.build.outputs.image }}:latest
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i ~/.ssh/deploy_key "ec2-user@$PROD_HOST" "
+              docker pull $IMAGE_REF &&
+              docker rm -f servicelink || true
+              docker run -d --name servicelink --restart unless-stopped -p 8080:8080 $IMAGE_REF
+            "
