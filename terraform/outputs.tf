@@ -8,9 +8,14 @@ output "app_url" {
   value       = length(aws_instance.app) > 0 ? "http://${aws_instance.app[0].public_ip}:${var.app_port}" : null
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to this workspace's instance"
-  value       = length(aws_instance.app) > 0 ? "ssh -i ${var.project_name}-key.pem ec2-user@${aws_instance.app[0].public_ip}" : null
+output "instance_id" {
+  description = "ID of this workspace's EC2 instance (used as the SSM deploy target)"
+  value       = length(aws_instance.app) > 0 ? aws_instance.app[0].id : null
+}
+
+output "ssm_session_command" {
+  description = "Command to open an interactive shell on this workspace's instance via SSM"
+  value       = length(aws_instance.app) > 0 ? "aws ssm start-session --target ${aws_instance.app[0].id} --region ${var.aws_region}" : null
 }
 
 output "security_group_id" {
@@ -21,6 +26,11 @@ output "security_group_id" {
 output "key_name" {
   description = "Name of the shared SSH key pair (set this as key_pair_name in dev.tfvars/prod.tfvars)"
   value       = local.key_name
+}
+
+output "instance_profile_name" {
+  description = "Name of the shared IAM instance profile (set this as instance_profile_name in dev.tfvars/prod.tfvars)"
+  value       = local.instance_profile_name
 }
 
 output "private_key_path" {

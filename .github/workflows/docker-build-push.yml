@@ -13,6 +13,7 @@ permissions:
   contents: read
   packages: write
   security-events: write
+  id-token: write # required for OIDC -> AWS (deploy steps use AWS SSM, not SSH)
 
 jobs:
   build:
@@ -207,21 +208,20 @@ jobs:
     needs: [build, push]
     if: github.ref_name == 'dev'
     steps:
-      - name: Deploy dev tag to the dev EC2 instance
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy dev tag to the dev EC2 instance via SSM
         env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          DEV_HOST: ${{ secrets.DEV_HOST }}
+          NAME_TAG: servicelink-dev
           IMAGE_REF: ${{ needs.build.outputs.image }}:dev
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            -i ~/.ssh/deploy_key "ec2-user@$DEV_HOST" "
-              docker pull $IMAGE_REF &&
-              (docker rm -f servicelink || true) &&
-              docker run -d --name servicelink --restart unless-stopped -p 8080:8080 $IMAGE_REF
-            "
+        run: .github/scripts/ssm-deploy.sh
 
   # Building from main only happens when someone manually runs this workflow with
   # "main" selected as the branch — pushes to main never trigger this file at all
@@ -235,18 +235,17 @@ jobs:
     if: github.ref_name == 'main' && github.event_name == 'workflow_dispatch'
     environment: production
     steps:
-      - name: Deploy latest tag to the prod EC2 instance
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy latest tag to the prod EC2 instance via SSM
         env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          PROD_HOST: ${{ secrets.PROD_HOST }}
+          NAME_TAG: servicelink-prod
           IMAGE_REF: ${{ needs.build.outputs.image }}:latest
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            -i ~/.ssh/deploy_key "ec2-user@$PROD_HOST" "
-              docker pull $IMAGE_REF &&
-              (docker rm -f servicelink || true) &&
-              docker run -d --name servicelink --restart unless-stopped -p 8080:8080 $IMAGE_REF
-            "
+        run: .github/scripts/ssm-deploy.sh

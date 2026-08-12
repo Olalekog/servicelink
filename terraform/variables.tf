@@ -41,3 +41,9 @@ variable "key_pair_name" {
   type        = string
   default     = null
 }
+
+variable "instance_profile_name" {
+  description = "Existing IAM instance profile name (for SSM access). Leave null in the default workspace to create one."
+  type        = string
+  default     = null
+}

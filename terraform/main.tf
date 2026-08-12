@@ -72,19 +72,12 @@ locals {
 
 # Shared across every environment — created once (in the default workspace,
 # where var.security_group_id is left null) and referenced by ID everywhere else.
+# No SSH ingress: deploys and manual access both go through SSM instead.
 resource "aws_security_group" "app" {
   count       = var.security_group_id == null ? 1 : 0
   name_prefix = "${var.project_name}-sg-"
-  description = "Allow SSH and app traffic"
+  description = "Allow app traffic"
   vpc_id      = data.aws_vpc.default.id
-
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   ingress {
     description = "App"
@@ -114,9 +107,48 @@ locals {
   security_group_id = coalesce(var.security_group_id, try(aws_security_group.app[0].id, null))
 }
 
-# One instance per workspace. The default workspace only manages the shared SG
-# and key pair above, so it's skipped here (count = 0) — dev/prod workspaces
-# (selected via `terraform workspace select` + their own tfvars file) get one.
+# Shared IAM role/instance profile so instances can be managed via SSM (used
+# for deploys from CI and for manual `aws ssm start-session` access) instead
+# of SSH. Created once, in the default workspace, and referenced by name
+# elsewhere — same pattern as the security group above.
+data "aws_iam_policy_document" "ec2_assume_role" {
+  count = var.instance_profile_name == null ? 1 : 0
+
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ssm" {
+  count              = var.instance_profile_name == null ? 1 : 0
+  name               = "${var.project_name}-ec2-ssm-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role[0].json
+}
+
+resource "aws_iam_role_policy_attachment" "ssm" {
+  count      = var.instance_profile_name == null ? 1 : 0
+  role       = aws_iam_role.ssm[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ssm" {
+  count = var.instance_profile_name == null ? 1 : 0
+  name  = "${var.project_name}-ec2-ssm-profile"
+  role  = aws_iam_role.ssm[0].name
+}
+
+locals {
+  instance_profile_name = coalesce(var.instance_profile_name, try(aws_iam_instance_profile.ssm[0].name, null))
+}
+
+# One instance per workspace. The default workspace only manages the shared SG,
+# key pair, and SSM role above, so it's skipped here (count = 0) — dev/prod
+# workspaces (selected via `terraform workspace select` + their own tfvars
+# file) get one.
 resource "aws_instance" "app" {
   count = terraform.workspace == "default" ? 0 : 1
 
@@ -125,6 +157,7 @@ resource "aws_instance" "app" {
   subnet_id                   = local.eligible_subnet_ids[0]
   vpc_security_group_ids      = [local.security_group_id]
   key_name                    = local.key_name
+  iam_instance_profile        = local.instance_profile_name
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
