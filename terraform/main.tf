@@ -18,12 +18,28 @@ data "aws_subnet" "default" {
   id       = each.value
 }
 
+# This VPC's default route table has an internet gateway route, but individual
+# subnets have their own explicit associations with other route tables (some
+# private-only, one pointing at a since-deleted NAT gateway) — so a subnet
+# being part of the "default" VPC does not mean it can reach the internet.
+# aws_route_table resolves whichever table actually applies to each subnet
+# (explicit association, or the main table if none), so this reflects real
+# routing rather than assuming.
+data "aws_route_table" "default" {
+  for_each  = toset(data.aws_subnets.default.ids)
+  subnet_id = each.value
+}
+
 locals {
   # us-east-1e doesn't support every instance type (t3.micro included), so
-  # exclude it rather than let AWS pick an unsupported AZ at random.
+  # exclude it rather than let AWS pick an unsupported AZ at random. Also
+  # require an active route to an internet gateway.
   eligible_subnet_ids = sort([
     for s in data.aws_subnet.default : s.id
-    if s.availability_zone != "us-east-1e"
+    if s.availability_zone != "us-east-1e" && anytrue([
+      for r in data.aws_route_table.default[s.id].routes :
+      r.cidr_block == "0.0.0.0/0" && length(regexall("^igw-", r.gateway_id)) > 0
+    ])
   ])
 }
 
