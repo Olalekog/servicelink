@@ -200,6 +200,26 @@ jobs:
             [ -n "$tag" ] && docker push "$tag"
           done <<< "${{ needs.build.outputs.tags }}"
 
+  deploy-dev:
+    runs-on: ubuntu-latest
+    needs: [build, push]
+    steps:
+      - name: Deploy dev tag to the dev EC2 instance
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DEV_HOST: ${{ secrets.DEV_HOST }}
+          IMAGE_REF: ${{ needs.build.outputs.image }}:dev
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i ~/.ssh/deploy_key "ec2-user@$DEV_HOST" "
+              docker pull $IMAGE_REF &&
+              docker rm -f servicelink || true
+              docker run -d --name servicelink --restart unless-stopped -p 8080:8080 $IMAGE_REF
+            "
+
   promote-to-main:
     runs-on: ubuntu-latest
     needs: [build, push]

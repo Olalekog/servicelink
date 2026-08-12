@@ -108,19 +108,21 @@ resource "aws_security_group" "app" {
 }
 
 resource "aws_instance" "app" {
+  for_each = var.environments
+
   ami                         = data.aws_ami.al2023.id
-  instance_type               = var.instance_type
+  instance_type               = each.value.instance_type
   subnet_id                   = local.eligible_subnet_ids[0]
   vpc_security_group_ids      = [aws_security_group.app.id]
   key_name                    = local.key_name
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    image_ref = "${var.image_name}:${var.image_tag}"
+    image_ref = "${var.image_name}:${each.value.image_tag}"
     app_port  = var.app_port
   })
 
   tags = {
-    Name = var.project_name
+    Name = "${var.project_name}-${each.key}"
   }
 }

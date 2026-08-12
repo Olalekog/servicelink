@@ -1,16 +1,16 @@
-output "public_ip" {
-  description = "Public IP address of the EC2 instance"
-  value       = aws_instance.app.public_ip
+output "public_ips" {
+  description = "Public IP address of each environment's EC2 instance"
+  value       = { for env, inst in aws_instance.app : env => inst.public_ip }
 }
 
-output "app_url" {
-  description = "URL where the app should be reachable"
-  value       = "http://${aws_instance.app.public_ip}:${var.app_port}"
+output "app_urls" {
+  description = "URL where each environment's app should be reachable"
+  value       = { for env, inst in aws_instance.app : env => "http://${inst.public_ip}:${var.app_port}" }
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to the instance"
-  value       = "ssh -i ${var.project_name}-key.pem ec2-user@${aws_instance.app.public_ip}"
+output "ssh_commands" {
+  description = "SSH command to connect to each environment's instance"
+  value       = { for env, inst in aws_instance.app : env => "ssh -i ${var.project_name}-key.pem ec2-user@${inst.public_ip}" }
 }
 
 output "private_key_path" {

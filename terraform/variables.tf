@@ -10,22 +10,28 @@ variable "project_name" {
   default     = "servicelink"
 }
 
-variable "instance_type" {
-  description = "EC2 instance type"
-  type        = string
-  default     = "t3.micro"
-}
-
 variable "image_name" {
   description = "Full GHCR image reference without tag"
   type        = string
   default     = "ghcr.io/olalekog/servicelink"
 }
 
-variable "image_tag" {
-  description = "Image tag to pull and run"
-  type        = string
-  default     = "latest"
+variable "environments" {
+  description = "One EC2 instance is created per entry, each running the given image tag"
+  type = map(object({
+    image_tag     = string
+    instance_type = string
+  }))
+  default = {
+    dev = {
+      image_tag     = "dev"
+      instance_type = "t3.micro"
+    }
+    prod = {
+      image_tag     = "latest"
+      instance_type = "t3.micro"
+    }
+  }
 }
 
 variable "app_port" {
