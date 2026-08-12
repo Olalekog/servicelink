@@ -95,20 +95,19 @@ jobs:
           directory: .
           framework: dockerfile,secrets
           output_format: cli,sarif
-          output_file_path: console,checkov-results
+          output_file_path: console,checkov-results.sarif
           soft_fail: true
 
       - name: Ensure Checkov SARIF file exists
         if: always()
         run: |
-          mkdir -p checkov-results
-          [ -s checkov-results/results_sarif.sarif ] || echo '{"version":"2.1.0","runs":[]}' > checkov-results/results_sarif.sarif
+          [ -s checkov-results.sarif ] || echo '{"version":"2.1.0","runs":[]}' > checkov-results.sarif
 
       - name: Upload Checkov results to Security tab
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: checkov-results/results_sarif.sarif
+          sarif_file: checkov-results.sarif
           category: checkov
 
       # SonarQube/SonarCloud is not configured yet. Add SONAR_TOKEN (and SONAR_HOST_URL for a
